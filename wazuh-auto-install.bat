@@ -1,7 +1,8 @@
 @echo off
+setlocal enabledelayedexpansion
 REM =============================================================================
-REM Windows Threat Hunting Enhancement Script - With Log File Output
-REM Creates detailed log file in same directory as script
+REM Windows Threat Hunting Enhancement Script v3 - Updated Version
+REM Direct Sysmon exe download + Unified directory structure
 REM =============================================================================
 
 REM Set log file path (same directory as script)
@@ -12,12 +13,12 @@ set TIMESTAMP=%TIMESTAMP: =0%
 
 REM Start logging
 echo ============================================================================= >> "%LOG_FILE%"
-echo Windows Threat Hunting Setup v5.2 - Started at %TIMESTAMP% >> "%LOG_FILE%"
+echo Windows Threat Hunting Setup v3.0 - Started at %TIMESTAMP% >> "%LOG_FILE%"
 echo Log file: %LOG_FILE% >> "%LOG_FILE%"
 echo ============================================================================= >> "%LOG_FILE%"
 
 REM Function to log both to console and file
-call :log "Starting Windows Threat Hunting Setup v5.2"
+call :log "Starting Windows Threat Hunting Setup v3.0"
 call :log "Log file: %LOG_FILE%"
 call :log ""
 
@@ -40,15 +41,16 @@ if %errorLevel% neq 0 (
 call :log "[SUCCESS] Running with administrator privileges"
 set /a SUCCESS_COUNT+=1
 
-REM Set variables
+REM Set variables - Updated directory structure
 set TEMP_DIR=C:\Windows\Temp\ThreatHuntingSetup
-set SCRIPTS_DIR=C:\Scripts
-set LOGS_DIR=C:\logs\netstat
+set SCRIPTS_DIR=C:\netstat
+set LOGS_DIR=C:\netstat\logs
 set TRANSCRIPTS_DIR=C:\Windows\Temp\PSTranscripts
 
-REM URLs for downloads
-set SYSMON_URL=https://download.sysinternals.com/files/Sysmon.zip
-set SYSMON_CONFIG_URL=https://raw.githubusercontent.com/SwiftOnSecurity/sysmon-config/master/sysmonconfig-export.xml
+REM URLs for downloads - Direct Sysmon exe links
+set SYSMON64_URL=https://github.com/navein-kumar/wazuh_sysmon/raw/refs/heads/main/Sysmon64.exe
+set SYSMON32_URL=https://github.com/navein-kumar/wazuh_sysmon/raw/refs/heads/main/Sysmon.exe
+set SYSMON_CONFIG_URL=https://raw.githubusercontent.com/navein-kumar/wazuh_sysmon/refs/heads/main/windows_sysmon_config.xml
 set NSSM_URL=https://raw.githubusercontent.com/navein-kumar/wazuh-Netstat-Powershell/main/nssm.exe
 set NETSTAT_SCRIPT_URL=https://raw.githubusercontent.com/navein-kumar/wazuh-Netstat-Powershell/main/netstat-service.ps1
 
@@ -256,15 +258,25 @@ if %errorLevel% equ 0 (
 )
 
 call :log "--- Downloading Sysmon files ---"
-call :log "Downloading Sysmon from: %SYSMON_URL%"
-powershell -Command "try { Invoke-WebRequest -Uri '%SYSMON_URL%' -OutFile '%TEMP_DIR%\Sysmon.zip' -UseBasicParsing; Write-Host 'Download completed' } catch { Write-Host 'Download failed:' $_.Exception.Message; exit 1 }" >>"%LOG_FILE%" 2>&1
+call :log "Downloading Sysmon64.exe from: %SYSMON64_URL%"
+powershell -Command "try { Invoke-WebRequest -Uri '%SYSMON64_URL%' -OutFile '%TEMP_DIR%\Sysmon64.exe' -UseBasicParsing; Write-Host 'Sysmon64.exe download completed' } catch { Write-Host 'Sysmon64.exe download failed:' $_.Exception.Message; exit 1 }" >>"%LOG_FILE%" 2>&1
 if %errorLevel% neq 0 (
-    call :log "[ERROR] Sysmon download failed"
-    set /a ERROR_COUNT+=1
-    goto :sysmon_error
+    call :log "[WARNING] Sysmon64.exe download failed, trying 32-bit version..."
+    call :log "Downloading Sysmon.exe from: %SYSMON32_URL%"
+    powershell -Command "try { Invoke-WebRequest -Uri '%SYSMON32_URL%' -OutFile '%TEMP_DIR%\Sysmon.exe' -UseBasicParsing; Write-Host 'Sysmon.exe download completed' } catch { Write-Host 'Sysmon.exe download failed:' $_.Exception.Message; exit 1 }" >>"%LOG_FILE%" 2>&1
+    if !errorLevel! neq 0 (
+        call :log "[ERROR] Both Sysmon downloads failed"
+        set /a ERROR_COUNT+=1
+        goto :sysmon_error
+    ) else (
+        call :log "[SUCCESS] Sysmon.exe (32-bit) download completed"
+        set /a SUCCESS_COUNT+=1
+        set SYSMON_DOWNLOADED=32
+    )
 ) else (
-    call :log "[SUCCESS] Sysmon download completed"
+    call :log "[SUCCESS] Sysmon64.exe download completed"
     set /a SUCCESS_COUNT+=1
+    set SYSMON_DOWNLOADED=64
 )
 
 call :log "Downloading Sysmon configuration from: %SYSMON_CONFIG_URL%"
@@ -278,31 +290,25 @@ if %errorLevel% neq 0 (
     set /a SUCCESS_COUNT+=1
 )
 
-call :log "--- Extracting Sysmon ---"
-call :log "Extracting Sysmon archive to: %TEMP_DIR%\Sysmon"
-powershell -Command "try { Expand-Archive -Path '%TEMP_DIR%\Sysmon.zip' -DestinationPath '%TEMP_DIR%\Sysmon' -Force; Write-Host 'Extraction completed' } catch { Write-Host 'Extraction failed:' $_.Exception.Message; exit 1 }" >>"%LOG_FILE%" 2>&1
-if %errorLevel% neq 0 (
-    call :log "[ERROR] Sysmon extraction failed"
-    set /a ERROR_COUNT+=1
-    goto :sysmon_error
+call :log "--- Checking downloaded files ---"
+if "%SYSMON_DOWNLOADED%"=="64" (
+    if exist "%TEMP_DIR%\Sysmon64.exe" (
+        call :log "[FOUND] Sysmon64.exe (64-bit version)"
+        dir "%TEMP_DIR%\Sysmon64.exe" >> "%LOG_FILE%" 2>&1
+    ) else (
+        call :log "[ERROR] Sysmon64.exe not found after download"
+        set /a ERROR_COUNT+=1
+        goto :sysmon_error
+    )
 ) else (
-    call :log "[SUCCESS] Sysmon extraction completed"
-    set /a SUCCESS_COUNT+=1
-)
-
-call :log "--- Checking extracted files ---"
-if exist "%TEMP_DIR%\Sysmon\Sysmon64.exe" (
-    call :log "[FOUND] Sysmon64.exe (64-bit version)"
-    dir "%TEMP_DIR%\Sysmon\Sysmon64.exe" >> "%LOG_FILE%" 2>&1
-) else (
-    call :log "[INFO] Sysmon64.exe not found"
-)
-
-if exist "%TEMP_DIR%\Sysmon\Sysmon.exe" (
-    call :log "[FOUND] Sysmon.exe (32-bit version)"
-    dir "%TEMP_DIR%\Sysmon\Sysmon.exe" >> "%LOG_FILE%" 2>&1
-) else (
-    call :log "[INFO] Sysmon.exe not found"
+    if exist "%TEMP_DIR%\Sysmon.exe" (
+        call :log "[FOUND] Sysmon.exe (32-bit version)"
+        dir "%TEMP_DIR%\Sysmon.exe" >> "%LOG_FILE%" 2>&1
+    ) else (
+        call :log "[ERROR] Sysmon.exe not found after download"
+        set /a ERROR_COUNT+=1
+        goto :sysmon_error
+    )
 )
 
 if exist "%TEMP_DIR%\sysmonconfig.xml" (
@@ -315,10 +321,10 @@ if exist "%TEMP_DIR%\sysmonconfig.xml" (
 )
 
 call :log "--- Installing Sysmon ---"
-if exist "%TEMP_DIR%\Sysmon\Sysmon64.exe" (
+if "%SYSMON_DOWNLOADED%"=="64" (
     call :log "[INFO] Installing Sysmon64 (64-bit version)..."
-    call :log "[COMMAND] %TEMP_DIR%\Sysmon\Sysmon64.exe -accepteula -i %TEMP_DIR%\sysmonconfig.xml"
-    "%TEMP_DIR%\Sysmon\Sysmon64.exe" -accepteula -i "%TEMP_DIR%\sysmonconfig.xml" >>"%LOG_FILE%" 2>&1
+    call :log "[COMMAND] %TEMP_DIR%\Sysmon64.exe -accepteula -i %TEMP_DIR%\sysmonconfig.xml"
+    "%TEMP_DIR%\Sysmon64.exe" -accepteula -i "%TEMP_DIR%\sysmonconfig.xml" >>"%LOG_FILE%" 2>&1
     set INSTALL_RESULT=!errorLevel!
     set SYSMON_INSTALLED=64
     
@@ -330,10 +336,10 @@ if exist "%TEMP_DIR%\Sysmon\Sysmon64.exe" (
         set /a ERROR_COUNT+=1
     )
     
-) else if exist "%TEMP_DIR%\Sysmon\Sysmon.exe" (
+) else (
     call :log "[INFO] Installing Sysmon (32-bit version)..."
-    call :log "[COMMAND] %TEMP_DIR%\Sysmon\Sysmon.exe -accepteula -i %TEMP_DIR%\sysmonconfig.xml"
-    "%TEMP_DIR%\Sysmon\Sysmon.exe" -accepteula -i "%TEMP_DIR%\sysmonconfig.xml" >>"%LOG_FILE%" 2>&1
+    call :log "[COMMAND] %TEMP_DIR%\Sysmon.exe -accepteula -i %TEMP_DIR%\sysmonconfig.xml"
+    "%TEMP_DIR%\Sysmon.exe" -accepteula -i "%TEMP_DIR%\sysmonconfig.xml" >>"%LOG_FILE%" 2>&1
     set INSTALL_RESULT=!errorLevel!
     set SYSMON_INSTALLED=32
     
@@ -344,13 +350,6 @@ if exist "%TEMP_DIR%\Sysmon\Sysmon64.exe" (
         call :log "[ERROR] Sysmon installation command failed with exit code: !INSTALL_RESULT!"
         set /a ERROR_COUNT+=1
     )
-    
-) else (
-    call :log "[ERROR] No Sysmon executable found in extracted files"
-    call :log "[INFO] Contents of extraction directory:"
-    dir "%TEMP_DIR%\Sysmon\" >> "%LOG_FILE%" 2>&1
-    set /a ERROR_COUNT+=1
-    goto :sysmon_error
 )
 
 call :log "--- Verifying Sysmon Installation ---"
@@ -637,93 +636,133 @@ if exist "%TEMP_DIR%" (
 
 call :log ""
 call :log "========================================="
-call :log "INSTALLATION SUMMARY"
+call :log "WAZUH AGENT RESTART"
 call :log "========================================="
-call :log ""
-call :log "RESULTS:"
-call :log " [SUCCESS] Operations: %SUCCESS_COUNT%"
-call :log " [WARNING] Operations: %WARNING_COUNT%"
-call :log " [ERROR]   Operations: %ERROR_COUNT%"
-call :log ""
 
-if %ERROR_COUNT% equ 0 (
-    call :log "[OVERALL STATUS] INSTALLATION COMPLETED SUCCESSFULLY"
-) else if %ERROR_COUNT% lss 3 (
-    call :log "[OVERALL STATUS] INSTALLATION COMPLETED WITH MINOR ISSUES"
+call :log "Checking Wazuh agent status..."
+sc query WazuhSvc >nul 2>&1
+if %errorLevel% equ 0 (
+    call :log "[FOUND] Wazuh agent service detected"
+    sc query WazuhSvc >> "%LOG_FILE%" 2>&1
+    
+    call :log "Restarting Wazuh agent to apply new log configurations..."
+    sc stop WazuhSvc >>"%LOG_FILE%" 2>&1
+    if !errorLevel! equ 0 (
+        call :log "[SUCCESS] Wazuh agent stopped"
+        call :log "[INFO] Waiting 5 seconds before restart..."
+        timeout /t 5 /nobreak >nul
+        
+        sc start WazuhSvc >>"%LOG_FILE%" 2>&1
+        if !errorLevel! equ 0 (
+            call :log "[SUCCESS] Wazuh agent started"
+            set /a SUCCESS_COUNT+=1
+            
+            call :log "[INFO] Waiting 5 seconds for agent to initialize..."
+            timeout /t 5 /nobreak >nul
+            
+            sc query WazuhSvc | find "RUNNING" >nul
+            if !errorLevel! equ 0 (
+                call :log "[SUCCESS] Wazuh agent is running and ready"
+                set /a SUCCESS_COUNT+=1
+            ) else (
+                call :log "[WARNING] Wazuh agent may still be starting up"
+                set /a WARNING_COUNT+=1
+            )
+        ) else (
+            call :log "[ERROR] Failed to start Wazuh agent"
+            set /a ERROR_COUNT+=1
+        )
+    ) else (
+        call :log "[ERROR] Failed to stop Wazuh agent"
+        set /a ERROR_COUNT+=1
+    )
 ) else (
-    call :log "[OVERALL STATUS] INSTALLATION COMPLETED WITH SIGNIFICANT ISSUES"
+    call :log "[WARNING] Wazuh agent service not found - please install Wazuh agent first"
+    call :log "[INFO] Service name checked: WazuhSvc"
+    set /a WARNING_COUNT+=1
 )
 
 call :log ""
-call :log "COMPONENTS CONFIGURED:"
-call :log " - Sysmon (with SwiftOnSecurity config)"
-call :log " - PowerShell Logging (Script Block, Module, Transcription)"
-call :log " - Windows Audit Policies (all categories)"
-call :log " - Netstat Monitoring Service"
-call :log ""
-
-call :log "VERIFICATION COMMANDS:"
-call :log " Check Sysmon: sc query Sysmon64  (or sc query Sysmon)"
-call :log " Check Driver: sc query SysmonDrv"
-call :log " Check Netstat: sc query NetstatService"
-call :log " Check Logs: Check Event Viewer -> Sysmon/Operational"
-call :log " Check Files: dir %LOGS_DIR%"
-call :log ""
-
-call :log "NEXT STEPS:"
-call :log "1. Add to Wazuh agent ossec.conf:"
-call :log "   <localfile>"
-call :log "     <location>Microsoft-Windows-Sysmon/Operational</location>"
-call :log "     <log_format>eventchannel</log_format>"
-call :log "   </localfile>"
-call :log ""
-call :log "   <localfile>"
-call :log "     <location>C:\logs\netstat\netstat*.json</location>"
-call :log "     <log_format>json</log_format>"
-call :log "   </localfile>"
-call :log ""
-call :log "2. Restart Wazuh agent service"
-call :log "3. Test by running: powershell.exe -Command Get-Process"
-call :log ""
-
 call :log "========================================="
-call :log "DETAILED SERVICE STATUS"
+call :log "FINAL VERIFICATION"
 call :log "========================================="
 call :log ""
+call :log "Running final verification checks..."
 
-call :log "--- Sysmon Status ---"
+call :log "--- Verifying Sysmon Service ---"
 sc query Sysmon64 >nul 2>&1
 if %errorLevel% equ 0 (
-    sc query Sysmon64 >> "%LOG_FILE%" 2>&1
-    call :log "Sysmon64 service details logged"
+    sc query Sysmon64 | find "RUNNING" >nul
+    if !errorLevel! equ 0 (
+        call :log "[VERIFIED] Sysmon64 service is RUNNING"
+        set SYSMON_STATUS=RUNNING
+    ) else (
+        call :log "[ISSUE] Sysmon64 service exists but not running"
+        set SYSMON_STATUS=NOT_RUNNING
+    )
 ) else (
     sc query Sysmon >nul 2>&1
     if !errorLevel! equ 0 (
-        sc query Sysmon >> "%LOG_FILE%" 2>&1
-        call :log "Sysmon service details logged"
+        sc query Sysmon | find "RUNNING" >nul
+        if !errorLevel! equ 0 (
+            call :log "[VERIFIED] Sysmon service is RUNNING"
+            set SYSMON_STATUS=RUNNING
+        ) else (
+            call :log "[ISSUE] Sysmon service exists but not running"
+            set SYSMON_STATUS=NOT_RUNNING
+        )
     ) else (
-        call :log "[ERROR] No Sysmon service found"
+        call :log "[ISSUE] No Sysmon service found"
+        set SYSMON_STATUS=NOT_FOUND
     )
 )
 
-call :log ""
-call :log "--- SysmonDrv Status ---"
+call :log "--- Verifying SysmonDrv Driver ---"
 sc query SysmonDrv >nul 2>&1
 if %errorLevel% equ 0 (
-    sc query SysmonDrv >> "%LOG_FILE%" 2>&1
-    call :log "SysmonDrv driver details logged"
+    sc query SysmonDrv | find "RUNNING" >nul
+    if !errorLevel! equ 0 (
+        call :log "[VERIFIED] SysmonDrv driver is RUNNING"
+        set SYSMONDRV_STATUS=RUNNING
+    ) else (
+        call :log "[ISSUE] SysmonDrv driver exists but not running"
+        set SYSMONDRV_STATUS=NOT_RUNNING
+    )
 ) else (
-    call :log "[ERROR] No SysmonDrv driver found"
+    call :log "[ISSUE] SysmonDrv driver not found"
+    set SYSMONDRV_STATUS=NOT_FOUND
 )
 
-call :log ""
-call :log "--- NetstatService Status ---"
+call :log "--- Verifying NetstatService ---"
 sc query NetstatService >nul 2>&1
 if %errorLevel% equ 0 (
-    sc query NetstatService >> "%LOG_FILE%" 2>&1
-    call :log "NetstatService details logged"
+    sc query NetstatService | find "RUNNING" >nul
+    if !errorLevel! equ 0 (
+        call :log "[VERIFIED] NetstatService is RUNNING"
+        set NETSTAT_STATUS=RUNNING
+    ) else (
+        call :log "[ISSUE] NetstatService exists but not running"
+        set NETSTAT_STATUS=NOT_RUNNING
+    )
 ) else (
-    call :log "[ERROR] No NetstatService found"
+    call :log "[ISSUE] NetstatService not found"
+    set NETSTAT_STATUS=NOT_FOUND
+)
+
+call :log "--- Verifying Wazuh Agent ---"
+sc query WazuhSvc >nul 2>&1
+if %errorLevel% equ 0 (
+    sc query WazuhSvc | find "RUNNING" >nul
+    if !errorLevel! equ 0 (
+        call :log "[VERIFIED] Wazuh agent is RUNNING"
+        set WAZUH_STATUS=RUNNING
+    ) else (
+        call :log "[ISSUE] Wazuh agent exists but not running"
+        set WAZUH_STATUS=NOT_RUNNING
+    )
+) else (
+    call :log "[ISSUE] Wazuh agent service not found"
+    set WAZUH_STATUS=NOT_FOUND
 )
 
 call :log ""
@@ -737,14 +776,41 @@ call :log ""
 REM Display final summary to console
 echo.
 echo ==========================================
-echo INSTALLATION COMPLETED
+echo INSTALLATION COMPLETED v3.0
 echo ==========================================
+echo.
+echo Updated Directory Structure:
+echo  Scripts: %SCRIPTS_DIR%
+echo  Logs:    %LOGS_DIR%
 echo.
 echo Results Summary:
 echo  SUCCESS: %SUCCESS_COUNT% operations
 echo  WARNING: %WARNING_COUNT% operations  
 echo  ERROR:   %ERROR_COUNT% operations
 echo.
+
+echo Service Status Verification:
+echo  Sysmon:       %SYSMON_STATUS%
+echo  SysmonDrv:    %SYSMONDRV_STATUS%
+echo  NetstatSvc:   %NETSTAT_STATUS%
+echo  WazuhAgent:   %WAZUH_STATUS%
+echo.
+
+echo Live Verification Commands:
+echo ==========================================
+echo sc query Sysmon64
+sc query Sysmon64
+echo.
+echo sc query SysmonDrv
+sc query SysmonDrv
+echo.
+echo sc query NetstatService
+sc query NetstatService
+echo.
+echo sc query WazuhSvc
+sc query WazuhSvc
+echo.
+
 if %ERROR_COUNT% equ 0 (
     echo [STATUS] Installation completed successfully!
 ) else (
@@ -753,10 +819,24 @@ if %ERROR_COUNT% equ 0 (
 echo.
 echo Full detailed log saved to: %LOG_FILE%
 echo.
-echo Key verification commands:
-echo  sc query Sysmon64
-echo  sc query SysmonDrv  
-echo  sc query NetstatService
+echo NEXT STEPS:
+echo 1. Check Event Viewer: eventvwr.msc
+echo    Navigate to: Applications and Services Logs ^> Microsoft ^> Windows ^> Sysmon ^> Operational
+echo 2. Test Sysmon: powershell.exe -Command "Get-Process"
+echo 3. Check netstat logs: dir %LOGS_DIR%\
+echo 4. Verify Wazuh agent is receiving logs in Wazuh dashboard
+echo.
+echo WAZUH CONFIGURATION:
+echo Add to ossec.conf:
+echo   ^<localfile^>
+echo     ^<location^>Microsoft-Windows-Sysmon/Operational^</location^>
+echo     ^<log_format^>eventchannel^</log_format^>
+echo   ^</localfile^>
+echo.
+echo   ^<localfile^>
+echo     ^<location^>%LOGS_DIR%\netstat*.json^</location^>
+echo     ^<log_format^>json^</log_format^>
+echo   ^</localfile^>
 echo.
 echo Press any key to open the log file...
 pause >nul
