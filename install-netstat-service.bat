@@ -31,7 +31,7 @@ echo [STEP 2] Downloading files from GitHub...
 
 REM Download netstat-service.ps1
 echo [INFO] Downloading netstat-service.ps1...
-powershell.exe -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'https://github.com/navein-kumar/wazuh-Netstat-Powershell/raw/refs/heads/main/netstat-service.ps1' -OutFile 'C:\netstat\netstat-service.ps1' -UseBasicParsing; Write-Host '[SUCCESS] netstat-service.ps1 downloaded successfully' -ForegroundColor Green } catch { Write-Host '[ERROR] Failed to download netstat-service.ps1:' $_.Exception.Message -ForegroundColor Red; exit 1 }"
+powershell.exe -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/navein-kumar/wazuh-Netstat-Powershell/refs/heads/main/netstat-service.ps1' -OutFile 'C:\netstat\netstat-service.ps1' -UseBasicParsing; Write-Host '[SUCCESS] netstat-service.ps1 downloaded successfully' -ForegroundColor Green } catch { Write-Host '[ERROR] Failed to download netstat-service.ps1:' $_.Exception.Message -ForegroundColor Red; exit 1 }"
 
 if %errorLevel% neq 0 (
     echo [ERROR] Failed to download netstat-service.ps1
