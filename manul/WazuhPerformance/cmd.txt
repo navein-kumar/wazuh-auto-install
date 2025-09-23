@@ -1,0 +1,7 @@
+"C:\WazuhPerformance\nssm.exe" install "WazuhPerfMoniter" powershell.exe "-ExecutionPolicy Bypass -WindowStyle Hidden -File C:\WazuhPerformance\service_runner.ps1"
+"C:\WazuhPerformance\nssm.exe" set "WazuhPerfMoniter" DisplayName "Wazuh Performance Monitor"
+"C:\WazuhPerformance\nssm.exe" set "WazuhPerfMoniter" Description "Collects Windows performance metrics for Wazuh monitoring"
+"C:\WazuhPerformance\nssm.exe" set "WazuhPerfMoniter" Start SERVICE_AUTO_START
+"C:\WazuhPerformance\nssm.exe" set "WazuhPerfMoniter" AppStdout "C:\WazuhPerformance\logs\service_stdout.log"
+"C:\WazuhPerformance\nssm.exe" set "WazuhPerfMoniter" AppStderr "C:\WazuhPerformance\logs\service_stderr.log"
+"C:\WazuhPerformance\nssm.exe" start "WazuhPerfMoniter"
