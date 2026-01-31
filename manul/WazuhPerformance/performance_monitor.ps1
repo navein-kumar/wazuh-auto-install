@@ -1,4 +1,4 @@
-# Windows Performance Monitor for Wazuh - Complete Version
+# Windows Performance Monitor for Wazuh - v2 Multi-Drive Support
 $logDir = "C:\WazuhPerformance\logs"
 $today = Get-Date -Format "yyyy-MM-dd"
 $logFile = "$logDir\performance_$today.json"
@@ -36,12 +36,33 @@ try {
     $memUsedKB = $memTotalKB - $memFreeKB
     $memUsedPercent = [math]::Round(($memUsedKB / $memTotalKB) * 100, 0)
 
-    # Get Disk information for C: drive
-    $disk = Get-WmiObject -Class Win32_LogicalDisk -Filter "DeviceID='C:'"
-    $diskTotalGB = [math]::Round($disk.Size / 1GB, 0)
-    $diskFreeGB = [math]::Round($disk.FreeSpace / 1GB, 0)
-    $diskUsedGB = $diskTotalGB - $diskFreeGB
-    $diskUsedPercent = [math]::Round(($diskUsedGB / $diskTotalGB) * 100, 0)
+    # Get ALL Disk information (Fixed drives only)
+    $allDisks = Get-WmiObject -Class Win32_LogicalDisk -Filter "DriveType=3"
+    $diskHighest = 0
+    $diskAlertDrive = ""
+    $diskDetails = @()
+
+    foreach ($disk in $allDisks) {
+        $driveLetter = $disk.DeviceID -replace ":",""
+        $diskTotalGB = [math]::Round($disk.Size / 1GB, 0)
+        $diskFreeGB = [math]::Round($disk.FreeSpace / 1GB, 0)
+        $diskUsedGB = $diskTotalGB - $diskFreeGB
+        $diskUsedPercent = [math]::Round(($diskUsedGB / $diskTotalGB) * 100, 0)
+
+        # Track highest disk usage for alert
+        if ($diskUsedPercent -gt $diskHighest) {
+            $diskHighest = $diskUsedPercent
+            $diskAlertDrive = $driveLetter
+        }
+
+        $diskDetails += @{
+            "drive" = $driveLetter
+            "total_gb" = [string]$diskTotalGB
+            "used_gb" = [string]$diskUsedGB
+            "free_gb" = [string]$diskFreeGB
+            "used_percent" = [string]$diskUsedPercent
+        }
+    }
 
     # Get Network adapters
     $networkAdapters = Get-WmiObject -Class Win32_NetworkAdapter -Filter "NetConnectionStatus=2"
@@ -68,12 +89,20 @@ try {
         "memory_used_gb" = [string][math]::Round($memUsedKB / 1MB, 0)
         "memory_free_gb" = [string][math]::Round($memFreeKB / 1MB, 0)
         "memory_used_percent" = [string]$memUsedPercent
-        "disk_total_gb" = [string]$diskTotalGB
-        "disk_used_gb" = [string]$diskUsedGB
-        "disk_free_gb" = [string]$diskFreeGB
-        "disk_used_percent" = [string]$diskUsedPercent
+        "disk_highest_percent" = [string]$diskHighest
+        "disk_alert_drive" = $diskAlertDrive
+        "disk_count" = [string]$diskDetails.Count
         "network_adapters_active" = [string]$activeNetworkCount
         "uptime_hours" = [string]$uptimeHours
+    }
+
+    # Add individual disk details
+    foreach ($d in $diskDetails) {
+        $prefix = "disk_" + $d.drive.ToLower()
+        $perfData["$prefix`_total_gb"] = $d.total_gb
+        $perfData["$prefix`_used_gb"] = $d.used_gb
+        $perfData["$prefix`_free_gb"] = $d.free_gb
+        $perfData["$prefix`_used_percent"] = $d.used_percent
     }
 
     # Convert to JSON and write to file
