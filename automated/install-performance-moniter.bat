@@ -7,7 +7,7 @@ set INSTALL_DIR=C:\WazuhPerformance
 set SERVICE_NAME=WazuhPerformanceMonitor
 set LOG_DIR=%INSTALL_DIR%\logs
 
-echo === Wazuh Performance Monitor Installation ===
+echo === Wazuh Performance Monitor Installation (v2 - Multi-Drive) ===
 
 REM Check admin
 net session >nul 2>&1
@@ -40,7 +40,7 @@ powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.Security
 REM Create complete performance script with all features
 echo Creating performance monitor script...
 (
-echo # Windows Performance Monitor for Wazuh - Complete Version
+echo # Windows Performance Monitor for Wazuh - v2 Multi-Drive Support
 echo $logDir = "C:\WazuhPerformance\logs"
 echo $today = Get-Date -Format "yyyy-MM-dd"
 echo $logFile = "$logDir\performance_$today.json"
@@ -78,12 +78,33 @@ echo     $memFreeKB = $memory.FreePhysicalMemory
 echo     $memUsedKB = $memTotalKB - $memFreeKB
 echo     $memUsedPercent = [math]::Round^(^($memUsedKB / $memTotalKB^) * 100, 0^)
 echo.
-echo     # Get Disk information for C: drive
-echo     $disk = Get-WmiObject -Class Win32_LogicalDisk -Filter "DeviceID='C:'"
-echo     $diskTotalGB = [math]::Round^($disk.Size / 1GB, 0^)
-echo     $diskFreeGB = [math]::Round^($disk.FreeSpace / 1GB, 0^)
-echo     $diskUsedGB = $diskTotalGB - $diskFreeGB
-echo     $diskUsedPercent = [math]::Round^(^($diskUsedGB / $diskTotalGB^) * 100, 0^)
+echo     # Get ALL Disk information ^(Fixed drives only^)
+echo     $allDisks = Get-WmiObject -Class Win32_LogicalDisk -Filter "DriveType=3"
+echo     $diskHighest = 0
+echo     $diskAlertDrive = ""
+echo     $diskDetails = @^(^)
+echo.
+echo     foreach ^($disk in $allDisks^) {
+echo         $driveLetter = $disk.DeviceID -replace ":",""
+echo         $diskTotalGB = [math]::Round^($disk.Size / 1GB, 0^)
+echo         $diskFreeGB = [math]::Round^($disk.FreeSpace / 1GB, 0^)
+echo         $diskUsedGB = $diskTotalGB - $diskFreeGB
+echo         $diskUsedPercent = [math]::Round^(^($diskUsedGB / $diskTotalGB^) * 100, 0^)
+echo.
+echo         # Track highest disk usage for alert
+echo         if ^($diskUsedPercent -gt $diskHighest^) {
+echo             $diskHighest = $diskUsedPercent
+echo             $diskAlertDrive = $driveLetter
+echo         }
+echo.
+echo         $diskDetails += @{
+echo             "drive" = $driveLetter
+echo             "total_gb" = [string]$diskTotalGB
+echo             "used_gb" = [string]$diskUsedGB
+echo             "free_gb" = [string]$diskFreeGB
+echo             "used_percent" = [string]$diskUsedPercent
+echo         }
+echo     }
 echo.
 echo     # Get Network adapters
 echo     $networkAdapters = Get-WmiObject -Class Win32_NetworkAdapter -Filter "NetConnectionStatus=2"
@@ -110,12 +131,20 @@ echo         "memory_total_gb" = [string][math]::Round^($memTotalKB / 1MB, 0^)
 echo         "memory_used_gb" = [string][math]::Round^($memUsedKB / 1MB, 0^)
 echo         "memory_free_gb" = [string][math]::Round^($memFreeKB / 1MB, 0^)
 echo         "memory_used_percent" = [string]$memUsedPercent
-echo         "disk_total_gb" = [string]$diskTotalGB
-echo         "disk_used_gb" = [string]$diskUsedGB
-echo         "disk_free_gb" = [string]$diskFreeGB
-echo         "disk_used_percent" = [string]$diskUsedPercent
+echo         "disk_highest_percent" = [string]$diskHighest
+echo         "disk_alert_drive" = $diskAlertDrive
+echo         "disk_count" = [string]$diskDetails.Count
 echo         "network_adapters_active" = [string]$activeNetworkCount
 echo         "uptime_hours" = [string]$uptimeHours
+echo     }
+echo.
+echo     # Add individual disk details
+echo     foreach ^($d in $diskDetails^) {
+echo         $prefix = "disk_" + $d.drive.ToLower^(^)
+echo         $perfData["$prefix`_total_gb"] = $d.total_gb
+echo         $perfData["$prefix`_used_gb"] = $d.used_gb
+echo         $perfData["$prefix`_free_gb"] = $d.free_gb
+echo         $perfData["$prefix`_used_percent"] = $d.used_percent
 echo     }
 echo.
 echo     # Convert to JSON and write to file
@@ -168,7 +197,7 @@ echo         $errorMsg = "Service runner error: $^($_.Exception.Message^)"
 echo         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 echo         "$timestamp`: $errorMsg" ^| Out-File "C:\WazuhPerformance\logs\service_errors.log" -Append
 echo     }
-echo     
+echo
 echo     # Wait 60 seconds before next collection
 echo     Start-Sleep -Seconds 60
 echo }
@@ -178,7 +207,7 @@ REM Install and configure service
 echo Installing Windows service...
 "%INSTALL_DIR%\nssm.exe" install "%SERVICE_NAME%" powershell.exe "-ExecutionPolicy Bypass -WindowStyle Hidden -File C:\WazuhPerformance\service_runner.ps1"
 "%INSTALL_DIR%\nssm.exe" set "%SERVICE_NAME%" DisplayName "Wazuh Performance Monitor"
-"%INSTALL_DIR%\nssm.exe" set "%SERVICE_NAME%" Description "Collects Windows performance metrics for Wazuh monitoring"
+"%INSTALL_DIR%\nssm.exe" set "%SERVICE_NAME%" Description "Collects Windows performance metrics for Wazuh monitoring (v2 Multi-Drive)"
 "%INSTALL_DIR%\nssm.exe" set "%SERVICE_NAME%" Start SERVICE_AUTO_START
 "%INSTALL_DIR%\nssm.exe" set "%SERVICE_NAME%" AppStdout "%LOG_DIR%\service_stdout.log"
 "%INSTALL_DIR%\nssm.exe" set "%SERVICE_NAME%" AppStderr "%LOG_DIR%\service_stderr.log"
@@ -188,7 +217,7 @@ echo Starting service...
 "%INSTALL_DIR%\nssm.exe" start "%SERVICE_NAME%"
 
 echo.
-echo === Installation Complete ===
+echo === Installation Complete (v2 - Multi-Drive) ===
 echo Service: %SERVICE_NAME%
 echo Install Directory: %INSTALL_DIR%
 echo Log Directory: %LOG_DIR%
@@ -204,4 +233,10 @@ echo ^</localfile^>
 echo.
 echo Service is running and collecting data every 60 seconds.
 echo Log rotation: Automatically removes logs older than 7 days.
+echo.
+echo NEW in v2:
+echo - Monitors ALL fixed drives (C:, D:, E:, etc.)
+echo - disk_highest_percent: Highest usage across all drives
+echo - disk_alert_drive: Which drive has highest usage
+echo - Individual drive metrics: disk_c_*, disk_d_*, etc.
 pause
